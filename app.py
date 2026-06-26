@@ -266,9 +266,8 @@ def render_institution(p, crit):
         with st.expander(f"연관 기관 {len(p['associated'])}개 (parent/child/related)"):
             for nm, rel, _ in p["associated"]:
                 st.markdown(f"- {nm} — _{rel}_")
-    with st.expander("⚠️ 한국 기관 집계 주의 (OpenAlex disambiguation)"):
-        for cav in C.KR_INST_CAVEATS:
-            st.markdown(f"- {cav}")
+    with st.expander("⚠️ 기관 집계 주의 (OpenAlex disambiguation)"):
+        st.markdown(C.INST_CAVEAT)
 
 
 def chart_heatmap(cc, title="국가 공동등장(공저) 매트릭스", key=None):
@@ -750,17 +749,12 @@ with tab_dash:
             chart_hbar(sources, "상위 학술지")
         d3, d4 = st.columns(2)
         with d3:
-            chart_hbar(insts, f"상위 기관 {_ms} ⚠️한국 오귀속 가능")
+            chart_hbar(insts, f"상위 기관 {_ms} ⚠️오귀속 가능")
         with d4:
             chart_hbar(inst_types, "기관 유형", color="#72B7B2")
-        # #10 한국 기관 오귀속 경고
-        flagged = [lbl for lbl, _, _ in insts
-                   if any(f.lower() in str(lbl).lower() for f in C.KR_INST_FLAG)]
-        with st.expander("⚠️ 한국 기관 집계 주의 (OpenAlex disambiguation)"
-                         + (f" — 주의 기관 감지: {', '.join(flagged)}" if flagged else "")):
-            for c in C.KR_INST_CAVEATS:
-                st.markdown(f"- {c}")
-            st.caption("→ 한국 기관의 OpenAlex 논문 수는 과대/과소집계일 수 있으니 곧이곧대로 비교하지 마세요.")
+        # 기관 집계 캐비엇 (비영어권 자동 disambiguation)
+        with st.expander("⚠️ 기관 집계 주의 (OpenAlex disambiguation)"):
+            st.markdown(C.INST_CAVEAT)
         d5, d6 = st.columns(2)
         with d5:
             chart_hbar(topics, "상위 토픽")
