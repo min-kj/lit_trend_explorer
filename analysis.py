@@ -84,7 +84,7 @@ def topic_model(abstracts, n_topics=8, n_top_words=10, max_docs=2000):
 
 # ============================================================
 # 1b) 최적 토픽 수(k) 추천 — perplexity + UMass coherence sweep
-#     (LCA의 BIC/해석가능성 대응: 임의 k 대신 정량 근거로 정당화)
+#     (임의 k 대신 정량 지표로 근거를 남기기 위한 보조)
 # ============================================================
 def _umass_coherence(components, Xb, doc_freq, topn=10):
     """UMass coherence(평균). 0에 가까울수록(덜 음수일수록) 응집도 높음."""

@@ -366,7 +366,7 @@ with st.sidebar:
                            help="'전체 본문'은 잠깐 언급/인용만 한 논문까지 잡혀 인용수 정렬 시 무관한 논문이 섞입니다.")
     scope = SCOPES[scope_label]
     phrase = st.checkbox("정확한 구문 일치(따옴표)", value=False,
-                         help='예: "latent class analysis" 를 한 덩어리로 매칭 (|OR과 함께 쓰지 마세요)')
+                         help='예: "machine learning" 를 한 덩어리로 매칭 (|OR과 함께 쓰지 마세요)')
 
     st.divider()
     st.caption("저자 (선택) — 이름·ORCID·OpenAlex ID")
@@ -818,9 +818,10 @@ with tab_topic:
     st.caption(f"사용 가능한 초록: {have}/{len(records)}건")
 
     st.subheader("주제 클러스터 (LDA)")
-    st.caption("⚠️ **탐색적 분석.** 토픽 수 k는 사용자가 정하는 하이퍼파라미터입니다 — LCA의 잠재계급 수처럼 "
-               "임의로 못 정해요. 출판용이면 아래 **'최적 k 추천'의 coherence/perplexity로 정당화**하거나 "
-               "BERTopic/HDP(비모수)를 쓰세요. 여기 결과는 선행연구 **'발견'용**이지 확정된 주제 구조가 아닙니다.")
+    st.caption("탐색적 분석입니다. 토픽 수 k는 분석자가 지정하는 값으로(자동 결정 아님), "
+               "출판용이면 아래 **'최적 k 추천'(coherence/perplexity)** 으로 근거를 남기거나 "
+               "비모수 방법(BERTopic·HDP)을 함께 검토하세요. 이 표는 선행연구 **'발견'용**이며 "
+               "확정된 주제 구조가 아닙니다.")
     cL, cR = st.columns([1, 3])
     n_topics = cL.slider("토픽 수 k", 2, 12, 6, key="lda_n")
     if cL.button("토픽 추출", use_container_width=True):
