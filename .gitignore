@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime
+*.log
+.streamlit/secrets.toml
+
+# Local-only
+WORK_STATUS.md
+FEEDBACK.md
+output/
+scimago_sjr/*.csv
+scimago_sjr/*.xlsx
