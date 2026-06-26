@@ -78,6 +78,38 @@ def get_taxonomy():
     return oa.fetch_taxonomy()
 
 
+def build_field_filter(selected, tax):
+    """선택한 분야 엔티티(층위 혼합 가능)를 OpenAlex filter 조각으로 변환.
+    selected: [(level, id, name)] (level='domain'|'field'|'subfield').
+    단일 층위면 그 층위 키로 OR, 층위가 섞이면 전부 세분류로 내려 OR(한 필터 키).
+    OpenAlex는 서로 다른 필터 키 사이 OR을 막아서(400) 세분류 정규화로 우회.
+    반환: (field_filter, field_label, scimago_cat)."""
+    if not selected:
+        return "", "전체 분야", ""
+    by = {"domain": [], "field": [], "subfield": []}
+    names = []
+    for lvl, eid, nm in selected:
+        by[lvl].append(eid)
+        names.append(nm)
+    used = [lvl for lvl in ("domain", "field", "subfield") if by[lvl]]
+    label = "분야: " + ", ".join(names)
+    if len(used) == 1:  # 단일 층위 → 해당 키로 직접 OR (URL 짧음)
+        lvl = used[0]
+        key = {"domain": "primary_topic.domain.id", "field": "primary_topic.field.id",
+               "subfield": "primary_topic.subfield.id"}[lvl]
+        ids = by[lvl]
+        cat = C.SUBFIELD_SCIMAGO_CAT.get(ids[0], "") if (lvl == "subfield" and len(ids) == 1) else ""
+        return f"{key}:" + "|".join(ids), label, cat
+    # 층위 혼합 → 모든 선택을 세분류 id 로 정규화 후 OR (세분류=가장 하위 공통분모)
+    field_to_dom = {fid: dom for fid, _nm, dom, _dnm in tax["fields"]}
+    sel_dom, sel_fld, sel_sub = set(by["domain"]), set(by["field"]), set(by["subfield"])
+    sub_ids = [sid for sid, _n, fid, _fn, _dn in tax["subfields"]
+               if sid in sel_sub or fid in sel_fld or field_to_dom.get(fid) in sel_dom]
+    if not sub_ids:
+        return "", "전체 분야", ""
+    return "primary_topic.subfield.id:" + "|".join(sub_ids), label, ""
+
+
 @st.cache_resource(show_spinner=False)
 def get_scimago_local():
     path = scimago.find_csv()
@@ -301,55 +333,29 @@ for k, v in {"author_id": "", "author_label": "", "author_candidates": [],
 with st.sidebar:
     st.header("🔎 검색 조건")
 
-    # ---- 분야: 수준 선택 + 복수 체크 (도메인/필드/세분류 중 한 수준) ----
+    # ---- 분야: 도메인·분야·세분류를 한 곳에서 섞어 복수 선택 ----
     tax = get_taxonomy()
-    LEVELS = {"전체(제한 없음)": "none", "도메인": "domain", "분야(field)": "field", "세분류(subfield)": "subfield"}
-    _lvl_keys = list(LEVELS.keys())
-    _def_lvl_idx = next((i for i, v in enumerate(LEVELS.values()) if v == C.DEFAULT_FIELD_LEVEL), 0)
-    level_label = st.radio("분야 수준", _lvl_keys, index=_def_lvl_idx, horizontal=True,
-                           help="한 수준에서만 복수 선택. 도메인>분야(field)>세분류(subfield) 순으로 좁아짐.")
-    level = LEVELS[level_label]
-    field_filter, field_label, field_scimago_cat = "", "전체 분야", ""
-    _is_default = (C.DEFAULT_FIELD_LEVEL == level)
+    field_opts = {}   # 표시 라벨 -> (level, id, 이름)
 
-    if level == "domain":
-        opts = {f"{C.DOMAIN_KR.get(did, nm)} ({nm})": did for did, nm in tax["domains"]}
-        dflt = [k for k, v in opts.items() if v in C.DEFAULT_FIELD_IDS] if _is_default else []
-        sel = st.multiselect("도메인 (복수 선택)", list(opts), default=dflt)
-        ids = [opts[s] for s in sel]
-        if ids:
-            field_filter = "primary_topic.domain.id:" + "|".join(ids)
-            field_label = "도메인: " + ", ".join(s.split(" (")[0] for s in sel)
-    elif level == "field":
-        dom_opts = {"전체 도메인": ""}
-        dom_opts.update({C.DOMAIN_KR.get(did, nm): did for did, nm in tax["domains"]})
-        dsel = dom_opts[st.selectbox("도메인으로 좁히기 (선택)", list(dom_opts))]
-        fopts = {f"[{C.DOMAIN_KR.get(did, dnm)}] {nm}": fid
-                 for fid, nm, did, dnm in tax["fields"] if (not dsel or did == dsel)}
-        dflt = [k for k, v in fopts.items() if v in C.DEFAULT_FIELD_IDS] if _is_default else []
-        sel = st.multiselect("분야 (복수 선택)", list(fopts), default=dflt)
-        ids = [fopts[s] for s in sel]
-        if ids:
-            field_filter = "primary_topic.field.id:" + "|".join(ids)
-            field_label = "분야: " + ", ".join(s.split("] ")[-1] for s in sel)
-    elif level == "subfield":
-        # 세분류는 252개라 분야(field)로 먼저 좁힌 뒤 그 안에서 복수 선택
-        fopts = {f"[{C.DOMAIN_KR.get(did, dnm)}] {nm}": fid for fid, nm, did, dnm in tax["fields"]}
-        # 기본 세분류가 속한 field 를 기본 선택
-        def_fid = next((sfid for sid, nm, sfid, sfnm, dnm in tax["subfields"]
-                        if sid in C.DEFAULT_FIELD_IDS), None) if _is_default else None
-        fkeys = list(fopts)
-        fidx = next((i for i, k in enumerate(fkeys) if fopts[k] == def_fid), 0) if def_fid else 0
-        fpick = fopts[st.selectbox("분야 선택", fkeys, index=fidx)]
-        subs = {nm: sid for sid, nm, sfid, sfnm, dnm in tax["subfields"] if sfid == fpick}
-        dflt = [nm for nm, sid in subs.items() if sid in C.DEFAULT_FIELD_IDS] if _is_default else []
-        sel = st.multiselect("세분류 (복수 선택)", list(subs), default=dflt)
-        ids = [subs[s] for s in sel]
-        if ids:
-            field_filter = "primary_topic.subfield.id:" + "|".join(ids)
-            field_label = "세분류: " + ", ".join(sel)
-            if len(ids) == 1:
-                field_scimago_cat = C.SUBFIELD_SCIMAGO_CAT.get(ids[0], "")
+    def _add_field_opt(label, level, eid, name):
+        key = label if label not in field_opts else f"{label} ({eid})"  # 동명 충돌 방지
+        field_opts[key] = (level, eid, name)
+
+    for _did, _nm in tax["domains"]:
+        _add_field_opt(f"[도메인] {C.DOMAIN_KR.get(_did, _nm)} ({_nm})", "domain", _did, C.DOMAIN_KR.get(_did, _nm))
+    for _fid, _nm, _did, _dnm in tax["fields"]:
+        _add_field_opt(f"[분야] {_nm} · {C.DOMAIN_KR.get(_did, _dnm)}", "field", _fid, _nm)
+    for _sid, _nm, _fid, _fnm, _dnm in tax["subfields"]:
+        _add_field_opt(f"[세분류] {_nm} · {_fnm}", "subfield", _sid, _nm)
+
+    _dflt = [lbl for lbl, (lvl, eid, nm) in field_opts.items() if eid in C.DEFAULT_FIELD_IDS]
+    sel_labels = st.multiselect(
+        "분야 (도메인·분야·세분류를 섞어 검색·복수 선택)", list(field_opts), default=_dflt,
+        help="한 검색창에서 모든 층위를 찾아 섞어 고를 수 있어요. "
+             "예: '[세분류] Public Administration' + '[분야] Computer Science' 를 함께 선택. "
+             "층위가 섞이면 자동으로 세분류 단위로 묶어 OR 검색합니다. 비우면 전체 분야.")
+    selected_fields = [field_opts[l] for l in sel_labels]
+    field_filter, field_label, field_scimago_cat = build_field_filter(selected_fields, tax)
 
     with st.expander("분야 직접 지정 (OpenAlex filter, 고급)"):
         custom = st.text_input("filter 조각", value="",
